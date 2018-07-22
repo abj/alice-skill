@@ -291,26 +291,33 @@ class Game(BaseGame):
             pass
 
     def get_next_regular_shot_position(self):
-        not_used_predefined_shots_by_step_4 = [
-            (idx, position) for idx, position in enumerate(self.predefined_shots_by_step_4)
-            if position is not None]
-        if not_used_predefined_shots_by_step_4:
-            idx, position = random.choice(not_used_predefined_shots_by_step_4)
-            # отмечаем, что использовали выстрел
-            self.predefined_shots_by_step_4[idx] = None
-            return position
+        def get_next_position():
+            not_used_predefined_shots_by_step_4 = [
+                (idx, position) for idx, position in enumerate(self.predefined_shots_by_step_4)
+                if position is not None]
+            if not_used_predefined_shots_by_step_4:
+                idx, position = random.choice(not_used_predefined_shots_by_step_4)
+                # отмечаем, что использовали выстрел
+                self.predefined_shots_by_step_4[idx] = None
+                return position
 
-        not_used_predefined_shots_by_step_2 = [
-            (idx, position) for idx, position in enumerate(self.predefined_shots_by_step_2)
-            if position is not None]
-        if not_used_predefined_shots_by_step_2:
-            idx, position = random.choice(not_used_predefined_shots_by_step_2)
-            # отмечаем, что использовали выстрел
-            self.predefined_shots_by_step_2[idx] = None
-            return position
+            not_used_predefined_shots_by_step_2 = [
+                (idx, position) for idx, position in enumerate(self.predefined_shots_by_step_2)
+                if position is not None]
+            if not_used_predefined_shots_by_step_2:
+                idx, position = random.choice(not_used_predefined_shots_by_step_2)
+                # отмечаем, что использовали выстрел
+                self.predefined_shots_by_step_2[idx] = None
+                return position
 
-        index = random.choice([i for i, v in enumerate(self.enemy_field) if v == EMPTY])
-        return self.calc_position(index)
+            index = random.choice([i for i, v in enumerate(self.enemy_field) if v == EMPTY])
+            return self.calc_position(index)
+
+        next_position = get_next_position()
+        while self.get_enemy_position_status(position=next_position) != EMPTY:
+            next_position = get_next_position()
+
+        return next_position
 
     def mark_enemy_position(self, position, status):
         x, y = position
