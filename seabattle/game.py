@@ -13,6 +13,14 @@ BLOCKED = 2
 HIT = 3
 MISS = 4
 
+UP = 0
+DOWN = 1
+LEFT = 2
+RIGHT = 3
+
+HORIZONTAL = 0
+VERTICAL = 1
+
 
 class BaseGame(object):
     position_patterns = [re.compile('^([a-zа-я]+)(\d+)$', re.UNICODE),  # a1
@@ -282,12 +290,231 @@ class Game(BaseGame):
         while not _try_to_place():
             pass
 
+    def get_next_regular_shot_position(self):
+        not_used_predefined_shots_by_step_4 = [
+            (idx, position) for idx, position in enumerate(self.predefined_shots_by_step_4)
+            if position is not None]
+        if not_used_predefined_shots_by_step_4:
+            idx, position = random.choice(not_used_predefined_shots_by_step_4)
+            # отмечаем, что использовали выстрел
+            self.predefined_shots_by_step_4[idx] = None
+            return position
+
+        not_used_predefined_shots_by_step_2 = [
+            (idx, position) for idx, position in enumerate(self.predefined_shots_by_step_2)
+            if position is not None]
+        if not_used_predefined_shots_by_step_2:
+            idx, position = random.choice(not_used_predefined_shots_by_step_2)
+            # отмечаем, что использовали выстрел
+            self.predefined_shots_by_step_2[idx] = None
+            return position
+
+        index = random.choice([i for i, v in enumerate(self.enemy_field) if v == EMPTY])
+        return self.calc_position(index)
+
+    def mark_enemy_position(self, position, status):
+        x, y = position
+        if (1 <= x <= self.size) and (1 <= y <= self.size):
+            self.enemy_field[self.calc_index(position=position)] = status
+
+    def get_enemy_position_status(self, position):
+        x, y = position
+        if (1 <= x <= self.size) and (1 <= y <= self.size):
+            return self.enemy_field[self.calc_index(position=position)]
+
+    def mark_positions_around_ship_as_missed(self, position, direction=None):
+        x, y = position
+        # север-восток
+        self.mark_enemy_position((x + 1, y - 1), MISS)
+        # юго-восток
+        self.mark_enemy_position((x + 1, y + 1), MISS)
+        # северо-запад
+        self.mark_enemy_position((x - 1, y - 1), MISS)
+        # юго-запад
+        self.mark_enemy_position((x - 1, y + 1), MISS)
+
+        # проверяем клетку сверху
+        if direction in (None, UP):
+            north_position = (x, y - 1)
+            if self.get_enemy_position_status(position=north_position) == SHIP:
+                self.mark_positions_around_ship_as_missed(position=north_position, direction=UP)
+            else:
+                self.mark_enemy_position(north_position, MISS)
+
+        # проверяем клетку справа
+        if direction in (None, RIGHT):
+            east_position = (x + 1, y)
+            if self.get_enemy_position_status(position=east_position) == SHIP:
+                self.mark_positions_around_ship_as_missed(position=east_position, direction=RIGHT)
+            else:
+                self.mark_enemy_position(east_position, MISS)
+
+        # проверяем клетку снизу
+        if direction in (None, DOWN):
+            south_position = (x, y + 1)
+            if self.get_enemy_position_status(position=south_position) == SHIP:
+                self.mark_positions_around_ship_as_missed(position=south_position, direction=DOWN)
+            else:
+                self.mark_enemy_position(south_position, MISS)
+
+        # проверяем клетку слева
+        if direction in (None, LEFT):
+            west_position = (x - 1, y)
+            if self.get_enemy_position_status(position=west_position) == SHIP:
+                self.mark_positions_around_ship_as_missed(position=west_position, direction=LEFT)
+            else:
+                self.mark_enemy_position(west_position, MISS)
+
+    def do_specified_shot(self, position):
+        self.last_shot_position = position
+        self.last_shot_enemy_ships_count = self.enemy_ships_count
+
+    def get_next_possible_shots(self, position, direction=None):
+        start_x, start_y = position
+
+        ship_orientation = None
+        vertical_possible_shots = []
+
+        # проверяем клетку сверху
+        if direction in (None, UP):
+            north_position = (start_x, start_y - 1)
+            enemy_position_status = self.get_enemy_position_status(position=north_position)
+            if enemy_position_status == SHIP:
+                ship_orientation = VERTICAL
+                vertical_possible_shots += self.get_next_possible_shots(position=north_position, direction=UP)
+            elif enemy_position_status == EMPTY:
+                vertical_possible_shots.append(north_position)
+
+        # проверяем клетку снизу
+        if direction in (None, DOWN):
+            south_position = (start_x, start_y + 1)
+            enemy_position_status = self.get_enemy_position_status(position=south_position)
+            if enemy_position_status == SHIP:
+                ship_orientation = VERTICAL
+                vertical_possible_shots += self.get_next_possible_shots(position=south_position, direction=DOWN)
+            elif enemy_position_status == EMPTY:
+                vertical_possible_shots.append(south_position)
+
+        horisontal_possible_shots = []
+
+        # проверяем клетку справа
+        if direction in (None, RIGHT):
+            east_position = (start_x + 1, start_y)
+            enemy_position_status = self.get_enemy_position_status(position=east_position)
+            if enemy_position_status == SHIP:
+                ship_orientation = HORIZONTAL
+                horisontal_possible_shots += self.get_next_possible_shots(position=east_position, direction=RIGHT)
+            elif enemy_position_status == EMPTY:
+                horisontal_possible_shots.append(east_position)
+
+        # проверяем клетку слева
+        if direction in (None, LEFT):
+            west_position = (start_x - 1, start_y)
+            enemy_position_status = self.get_enemy_position_status(position=west_position)
+            if enemy_position_status == SHIP:
+                ship_orientation = HORIZONTAL
+                horisontal_possible_shots += self.get_next_possible_shots(position=west_position, direction=LEFT)
+            elif enemy_position_status == EMPTY:
+                horisontal_possible_shots.append(west_position)
+
+        if ship_orientation == VERTICAL:
+            return vertical_possible_shots
+        elif ship_orientation == HORIZONTAL:
+            return horisontal_possible_shots
+
+        return vertical_possible_shots + horisontal_possible_shots
+
     def do_shot(self):
         """Метод выбора координаты выстрела.
 
         ЕГО И НУЖНО ЗАМЕНИТЬ НА СВОЙ АЛГОРИТМ
         """
-        index = random.choice([i for i, v in enumerate(self.enemy_field) if v == EMPTY])
 
-        self.last_shot_position = self.calc_position(index)
+        # index = random.choice([i for i, v in enumerate(self.enemy_field) if v == EMPTY])
+        #
+        # self.last_shot_position = self.calc_position(index)
+        if self.last_shot_position is None:
+            self.do_specified_shot(self.get_next_regular_shot_position())
+
+        if self.get_enemy_position_status(position=self.last_shot_position) == SHIP:
+            # в прошлый раз попали в корабль
+            if self.last_shot_enemy_ships_count == self.enemy_ships_count:
+                # поразили корабль, но не потопили
+                if self.found_ship:
+                    # уже ранее обнуружили корабль
+                    next_possible_shots = self.get_next_possible_shots(self.first_ship_hit_position)
+                    self.do_specified_shot(random.choice(next_possible_shots))
+                else:
+                    # только что обнаружили корабль
+                    self.found_ship = True
+                    self.first_ship_hit_position = self.last_shot_position
+
+                    next_possible_shots = self.get_next_possible_shots(self.first_ship_hit_position)
+                    self.do_specified_shot(random.choice(next_possible_shots))
+            else:
+                # потопили корабль
+                self.mark_positions_around_ship_as_missed(position=self.last_shot_position)
+
+                # сбрасываем вспомогательные данные о найденном корабле
+                self.found_ship = False
+                self.first_ship_hit_position = None
+
+                # делаем обычный выстрел
+                self.do_specified_shot(self.get_next_regular_shot_position())
+        else:
+            # в прошлый раз промахнулись
+            if self.found_ship:
+                next_possible_shots = self.get_next_possible_shots(self.first_ship_hit_position)
+                self.do_specified_shot(random.choice(next_possible_shots))
+            else:
+                # обычный выстрел
+                self.do_specified_shot(self.get_next_regular_shot_position())
+
         return self.convert_from_position(self.last_shot_position)
+
+    def __init__(self):
+        super(Game, self).__init__()
+
+        self.predefined_shots_by_step_4 = None
+        self.predefined_shots_by_step_2 = None
+
+        self.last_shot_enemy_ships_count = 0
+        self.last_shot_direction = None
+        self.first_ship_hit_position = None
+        self.found_ship = False
+
+    def start_new_game(self, size=10, field=None, ships=None, numbers=None):
+        super(Game, self).start_new_game(size=size, field=field, ships=ships, numbers=numbers)
+
+        self.predefined_shots_by_step_4 = [position for position in self.diagonal_shots(step=4)]
+        self.predefined_shots_by_step_2 = [position for position in self.diagonal_shots(step=2)]
+
+        self.last_shot_enemy_ships_count = self.enemy_ships_count
+        self.last_shot_direction = None
+        self.first_ship_hit_position = None
+        self.found_ship = False
+
+    def diagonal_positions(self, field_size):
+        for i in range(field_size):
+            yield field_size - i, i + 1
+
+    def diagonal_shots(self, step):
+        number_of_step_field = (self.size + step - 1) // step
+        for fy in range(number_of_step_field):
+            for fx in range(number_of_step_field):
+                for x, y in self.diagonal_positions(field_size=step):
+                    effective_x = x + fx * step
+                    if effective_x > self.size:
+                        continue
+                    effective_y = y + fy * step
+                    if effective_y > self.size:
+                        continue
+                    yield effective_x, effective_y
+
+    # def predefined_shots(self):
+    #     for step_value in (4, 2):
+    #         for position in self.diagonal_shots(step=step_value):
+    #             enemy_position_index = self.calc_index(position=position)
+    #             if self.enemy_field[enemy_position_index] != EMPTY:
+    #                 continue
+    #             yield position
